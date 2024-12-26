@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Decentralized Prediction Market</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #events-list {
+            margin-top: 20px;
+        }
+        .event-card {
+            border: 1px solid #e0e0e0;
+            margin-bottom: 15px;
+            padding: 15px;
+            border-radius: 6px;
+        }
+        #status, #error {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        #status {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        #error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Decentralized Prediction Market</h1>
+        
+        <!-- Wallet Connection -->
+        <div class="section">
+            <h2>Wallet Connection</h2>
+            <button onclick="connectWallet()">Connect Wallet</button>
+            <div id="account-info"></div>
+        </div>
+
+        <!-- Create Event Section -->
+        <div class="section">
+            <h2>Create Prediction Event</h2>
+            <input type="text" id="event-description" placeholder="Event Description">
+            <input type="number" id="event-duration" placeholder="Duration (in seconds)">
+            <button onclick="createEvent()">Create Event</button>
+        </div>
+
+        <!-- Available Events -->
+        <div class="section">
+            <h2>Available Prediction Events</h2>
+            <button onclick="fetchEvents()">Refresh Events</button>
+            <div id="events-list"></div>
+        </div>
+
+        <!-- Bet Placement -->
+        <div class="section">
+            <h2>Place a Bet</h2>
+            <input type="number" id="bet-event-id" placeholder="Event ID">
+            <select id="bet-prediction">
+                <option value="true">YES</option>
+                <option value="false">NO</option>
+            </select>
+            <input type="number" id="bet-amount" placeholder="Bet Amount (Wei)">
+            <button onclick="placeBet()">Place Bet</button>
+        </div>
+
+        <!-- Resolve Event -->
+        <div class="section">
+            <h2>Resolve Event</h2>
+            <input type="number" id="resolve-event-id" placeholder="Event ID">
+            <select id="resolve-outcome">
+                <option value="true">YES</option>
+                <option value="false">NO</option>
+            </select>
+            <button onclick="resolveEvent()">Resolve Event</button>
+        </div>
+
+        <!-- Claim Rewards -->
+        <div class="section">
+            <h2>Claim Rewards</h2>
+            <input type="number" id="claim-event-id" placeholder="Event ID">
+            <button onclick="claimReward()">Claim Reward</button>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="status"></div>
+        <div id="error"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
+    <script>
+        // Contract ABI and Address (replace with your actual deployed contract details)
+        const contractABI = [
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			}
+		],
+		"name": "claimReward",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "string",
+				"name": "_description",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "_duration",
+				"type": "uint256"
+			}
+		],
+		"name": "createEvent",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "string",
+				"name": "description",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "startTime",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "endTime",
+				"type": "uint256"
+			}
+		],
+		"name": "EventCreated",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "outcome",
+				"type": "bool"
+			}
+		],
+		"name": "EventResolved",
+		"type": "event"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "prediction",
+				"type": "bool"
+			}
+		],
+		"name": "placeBet",
+		"outputs": [],
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "_outcome",
+				"type": "bool"
+			}
+		],
+		"name": "resolveEvent",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "participant",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "reward",
+				"type": "uint256"
+			}
+		],
+		"name": "RewardClaimed",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": true,
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			},
+			{
+				"indexed": true,
+				"internalType": "address",
+				"name": "participant",
+				"type": "address"
+			},
+			{
+				"indexed": false,
+				"internalType": "bool",
+				"name": "prediction",
+				"type": "bool"
+			},
+			{
+				"indexed": false,
+				"internalType": "uint256",
+				"name": "amount",
+				"type": "uint256"
+			}
+		],
+		"name": "StakePlaced",
+		"type": "event"
+	},
+	{
+		"stateMutability": "payable",
+		"type": "receive"
+	},
+	{
+		"inputs": [],
+		"name": "EVENT_CREATION_FEE",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "eventCounter",
+		"outputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "",
+				"type": "uint256"
+			}
+		],
+		"name": "events",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "description",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "startTime",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "endTime",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "isResolved",
+				"type": "bool"
+			},
+			{
+				"internalType": "bool",
+				"name": "outcome",
+				"type": "bool"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalYesStake",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalNoStake",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{
+				"internalType": "uint256",
+				"name": "eventId",
+				"type": "uint256"
+			}
+		],
+		"name": "getEventDetails",
+		"outputs": [
+			{
+				"internalType": "string",
+				"name": "description",
+				"type": "string"
+			},
+			{
+				"internalType": "uint256",
+				"name": "startTime",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "endTime",
+				"type": "uint256"
+			},
+			{
+				"internalType": "bool",
+				"name": "isResolved",
+				"type": "bool"
+			},
+			{
+				"internalType": "bool",
+				"name": "outcome",
+				"type": "bool"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalYesStake",
+				"type": "uint256"
+			},
+			{
+				"internalType": "uint256",
+				"name": "totalNoStake",
+				"type": "uint256"
+			}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	}
+];
+        const contractAddress = '0xd9145CCE52D386f254917e481eB44e9943F39138'; // Replace with actual deployed contract address
+
+        let web3;
+        let contract;
+        let userAccount;
+
+        async function connectWallet() {
+            if (typeof window.ethereum !== 'undefined') {
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                    userAccount = accounts[0];
+                    
+                    web3 = new Web3(window.ethereum);
+                    contract = new web3.eth.Contract(contractABI, contractAddress);
+
+                    document.getElementById('account-info').innerHTML = 
+                        `Connected Account: ${userAccount}`;
+                    
+                    document.getElementById('status').innerHTML = 
+                        'Wallet successfully connected!';
+                } catch (error) {
+                    document.getElementById('error').innerHTML = 
+                        `Connection failed: ${error.message}`;
+                }
+            } else {
+                document.getElementById('error').innerHTML = 
+                    'Please install MetaMask!';
+            }
+        }
+
+        async function createEvent() {
+            if (!userAccount) {
+                document.getElementById('error').innerHTML = 'Please connect wallet first!';
+                return;
+            }
+
+            const description = document.getElementById('event-description').value;
+            const duration = document.getElementById('event-duration').value;
+
+            try {
+                await contract.methods.createEvent(description, duration)
+                    .send({ 
+                        from: userAccount, 
+                        value: web3.utils.toWei('0.01', 'ether') 
+                    });
+                
+                document.getElementById('status').innerHTML = 'Event created successfully!';
+                fetchEvents();
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Event creation failed: ${error.message}`;
+            }
+        }
+
+        async function fetchEvents() {
+            if (!contract) {
+                document.getElementById('error').innerHTML = 'Please connect wallet first!';
+                return;
+            }
+
+            const eventsList = document.getElementById('events-list');
+            eventsList.innerHTML = 'Loading events...';
+
+            try {
+                const eventCounter = await contract.methods.eventCounter().call();
+                let eventsHTML = '';
+
+                for (let i = 1; i <= eventCounter; i++) {
+                    const event = await contract.methods.getEventDetails(i).call();
+                    
+                    eventsHTML += `
+                        <div class="event-card">
+                            <strong>Event ID:</strong> ${i}<br>
+                            <strong>Description:</strong> ${event.description}<br>
+                            <strong>Start Time:</strong> ${new Date(event.startTime * 1000).toLocaleString()}<br>
+                            <strong>End Time:</strong> ${new Date(event.endTime * 1000).toLocaleString()}<br>
+                            <strong>Resolved:</strong> ${event.isResolved ? 'Yes' : 'No'}<br>
+                            <strong>Total YES Stake:</strong> ${web3.utils.fromWei(event.totalYesStake, 'ether')} ETH<br>
+                            <strong>Total NO Stake:</strong> ${web3.utils.fromWei(event.totalNoStake, 'ether')} ETH
+                        </div>
+                    `;
+                }
+
+                eventsList.innerHTML = eventsHTML;
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Failed to fetch events: ${error.message}`;
+            }
+        }
+
+        async function placeBet() {
+            if (!userAccount) {
+                document.getElementById('error').innerHTML = 'Please connect wallet first!';
+                return;
+            }
+
+            const eventId = document.getElementById('bet-event-id').value;
+            const prediction = document.getElementById('bet-prediction').value === 'true';
+            const amount = document.getElementById('bet-amount').value;
+
+            try {
+                await contract.methods.placeBet(eventId, prediction)
+                    .send({ 
+                        from: userAccount, 
+                        value: amount 
+                    });
+                
+                document.getElementById('status').innerHTML = 'Bet placed successfully!';
+                fetchEvents();
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Bet placement failed: ${error.message}`;
+            }
+        }
+
+        async function resolveEvent() {
+            if (!userAccount) {
+                document.getElementById('error').innerHTML = 'Please connect wallet first!';
+                return;
+            }
+
+            const eventId = document.getElementById('resolve-event-id').value;
+            const outcome = document.getElementById('resolve-outcome').value === 'true';
+
+            try {
+                await contract.methods.resolveEvent(eventId, outcome)
+                    .send({ from: userAccount });
+                
+                document.getElementById('status').innerHTML = 'Event resolved successfully!';
+                fetchEvents();
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Event resolution failed: ${error.message}`;
+            }
+        }
+
+        async function claimReward() {
+            if (!userAccount) {
+                document.getElementById('error').innerHTML = 'Please connect wallet first!';
+                return;
+            }
+
+            const eventId = document.getElementById('claim-event-id').value;
+
+            try {
+                await contract.methods.claimReward(eventId)
+                    .send({ from: userAccount });
+                
+                document.getElementById('status').innerHTML = 'Reward claimed successfully!';
+            } catch (error) {
+                document.getElementById('error').innerHTML = 
+                    `Reward claim failed: ${error.message}`;
+            }
+        }
+
+        // Network and account change listeners
+        if (typeof window.ethereum !== 'undefined') {
+            window.ethereum.on('chainChanged', () => window.location.reload());
+            window.ethereum.on('accountsChanged', (accounts) => {
+                if (accounts.length > 0) {
+                    userAccount = accounts[0];
+                    document.getElementById('account-info').innerHTML = 
+                        `Connected Account: ${userAccount}`;
+                } else {
+                    document.getElementById('account-info').innerHTML = '';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
